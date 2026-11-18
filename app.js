@@ -201,6 +201,12 @@
     fadeDuration: 300,
   });
   window.__map = map;
+  /* Karte folgt jeder Grössenänderung (Handy drehen, Adressleiste ein/aus) */
+  try {
+    let rz = 0;
+    new ResizeObserver(() => { cancelAnimationFrame(rz); rz = requestAnimationFrame(() => map.resize()); }).observe(document.getElementById("map"));
+  } catch (e) {}
+  addEventListener("orientationchange", () => setTimeout(() => map.resize(), 250));
 
   /* Ladebalken */
   const loadbar = $("#loadbar");
