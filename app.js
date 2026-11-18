@@ -197,7 +197,7 @@
       terrain: { source: "dem", exaggeration: 1.35 },
     },
     ...START_VIEW,
-    maxPitch: 82,
+    maxPitch: 72,
     attributionControl: { compact: true },
     fadeDuration: MOBILE ? 0 : 300,
     /* Handys rendern sonst mit 3× Pixeldichte – 1.5× sieht gleich scharf aus und ist ~4× schneller */
@@ -211,6 +211,21 @@
     new ResizeObserver(() => { cancelAnimationFrame(rz); rz = requestAnimationFrame(() => map.resize()); }).observe(document.getElementById("map"));
   } catch (e) {}
   addEventListener("orientationchange", () => setTimeout(() => map.resize(), 250));
+
+  /* Automatische Qualität: ruckelt es (viele Bilder > 34 ms), Pixeldichte schrittweise senken */
+  (() => {
+    if (!map.setPixelRatio) return;
+    let last = 0, frames = 0, slow = 0;
+    map.on("render", () => {
+      const now = performance.now(), dt = now - last; last = now;
+      if (dt > 250) return;                       // Pause, kein Ruckeln
+      frames++; if (dt > 34) slow++;
+      if (frames < 60) return;
+      const pr = map.getPixelRatio();
+      if (slow / frames > 0.35 && pr > 1.01) map.setPixelRatio(Math.max(1, +(pr - 0.25).toFixed(2)));
+      frames = 0; slow = 0;
+    });
+  })();
 
   /* 3D-Gelände nur, wenn man nah genug dran ist – auf dem ganzen Globus sieht man es ohnehin nicht */
   let terrainOn = true;
@@ -261,7 +276,8 @@
     MOUNTAINS.forEach((m) => {
       const mk = markers[m.id]; if (!mk) return;
       const hide = dist(cc, m) > limit;
-      if (mk.hidden !== hide) { mk.hidden = hide; mk.el.style.visibility = hide ? "hidden" : ""; }
+      /* ferne Marker ganz von der Karte nehmen: sonst rechnet MapLibre für jeden in jedem Bild Position + Geländehöhe */
+      if (mk.hidden !== hide) { mk.hidden = hide; if (hide) mk.mk.remove(); else mk.mk.addTo(map); }
     });
   }
   map.on("move", cullMarkers);
@@ -753,8 +769,8 @@
 
   async function flyAround(m) {
     stopOrbit();
-    await easeTo({ center: [m.lon, m.lat], zoom: (m.alt > 5000 ? 11.8 : 12.6) + 0.3, pitch: 76, duration: 1800 });
-    if (selected === m.id) orbit(9, 30000);
+    await easeTo({ center: [m.lon, m.lat], zoom: (m.alt > 5000 ? 11.8 : 12.6) + 0.2, pitch: 62, duration: 1800 });
+    if (selected === m.id) orbit(7, 30000);
   }
 
   /* ---------- Lightbox ---------- */
