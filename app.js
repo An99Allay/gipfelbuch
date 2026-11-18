@@ -654,12 +654,20 @@
   const fmtDate = (d) => { if (!d) return ""; const [y, mo, da] = d.split("-"); return `${+da}.${+mo}.${y}`; };
 
   /* ---------- Liste ---------- */
-  let filter = "all", query = "", selected = null;
+  let filter = "all", query = "", selected = null, grade = "all";
+  /* Schwierigkeits-Filter: Wandern (T1–T6) · Hochtour (L–ZS) · Schwer (S und mehr) · mit Route */
+  const GRADES = { all: () => true, wander: (m) => m.lvl <= 4, hoch: (m) => m.lvl >= 5 && m.lvl <= 7, schwer: (m) => m.lvl >= 8, route: (m) => !!(window.ROUTES || {})[m.id] };
+  function applyMapFilter(items) {
+    if (!map.getLayer("peaks")) return;
+    const all = grade === "all" && filter === "all" && !query.trim();
+    const f = all ? null : ["in", ["get", "id"], ["literal", items.map((m) => m.id)]];
+    ["peaks", "peaks-ring", "peaks-label"].forEach((l) => map.setFilter(l, f));
+  }
   function renderList() {
     const body = $("#listBody");
     const q = query.trim().toLowerCase();
     const items = MOUNTAINS.filter((m) =>
-      (filter === "all" || (filter === "done") === isDone(m.id)) &&
+      (filter === "all" || (filter === "done") === isDone(m.id)) && GRADES[grade](m) &&
       (!q || (m.name + " " + (m.sub || "") + " " + m.region + " " + m.range).toLowerCase().includes(q)));
     const groups = {};
     items.forEach((m) => (groups[sectionOf(m)] ||= []).push(m));
@@ -682,6 +690,7 @@
       });
     });
     if (!items.length) body.append(el("p", "credit", filter === "done" ? "Noch nichts bestiegen in dieser Auswahl." : "Kein Berg gefunden."));
+    applyMapFilter(items);
   }
   function renderProgress() {
     const d = MOUNTAINS.filter((m) => isDone(m.id)).length;
@@ -690,9 +699,15 @@
     $("#progressFill").style.width = (100 * d) / MOUNTAINS.length + "%";
   }
   $("#q").addEventListener("input", (e) => { query = e.target.value; renderList(); });
-  document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => {
-    document.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c));
+  document.querySelectorAll(".chip[data-f]").forEach((c) => c.addEventListener("click", () => {
+    document.querySelectorAll(".chip[data-f]").forEach((x) => x.classList.toggle("on", x === c));
     filter = c.dataset.f; renderList();
+  }));
+  document.querySelectorAll(".chip[data-g]").forEach((c) => c.addEventListener("click", () => {
+    const same = grade === c.dataset.g;
+    grade = same ? "all" : c.dataset.g;
+    document.querySelectorAll(".chip[data-g]").forEach((x) => x.classList.toggle("on", !same && x === c));
+    renderList();
   }));
   $("#listGrip").addEventListener("click", () => $("#list").classList.toggle("tall"));
   $("#q").addEventListener("focus", () => isMobile() && $("#list").classList.add("tall"));
