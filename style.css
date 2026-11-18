@@ -448,3 +448,29 @@ body.touring .list { transform: translateX(-30px); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- Aufstiegsrouten ---------- */
+.routes { display: grid; gap: 6px; }
+.rt {
+  display: grid; grid-template-columns: 1fr auto 18px; grid-template-rows: auto auto; column-gap: 10px; align-items: center;
+  text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.04);
+  transition: background .2s, border-color .2s, transform .2s var(--ease);
+}
+.rt:hover { background: rgba(255,255,255,.08); }
+.rt.on { border-color: rgba(95,212,232,.6); background: linear-gradient(90deg, rgba(95,212,232,.14), rgba(255,106,61,.08)); }
+.rt-n { font-weight: 600; font-size: 13.5px; }
+.rt-m { grid-row: 2; font-family: var(--f-mono); font-size: 11px; color: var(--muted); }
+.rt-tag { grid-row: span 2; font-family: var(--f-mono); font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border: 1px dashed var(--line-strong); padding: 2px 6px; border-radius: 5px; }
+.rt-tag.real { color: #9be7c4; border-style: solid; border-color: rgba(155,231,196,.35); }
+.rt svg { grid-row: span 2; width: 16px; height: 16px; color: var(--muted); transition: transform .2s var(--ease), color .2s; }
+.rt:hover svg, .rt.on svg { color: var(--fg); transform: translateX(2px); }
+
+.camp { position: relative; width: 0; height: 0; pointer-events: none; animation: campIn .5s var(--ease) both; }
+.camp i { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 3px; background: #fff; border: 2px solid #0b0f13; transform: rotate(45deg); }
+.camp.start i { border-radius: 50%; background: #5fd4e8; transform: none; }
+.camp span {
+  position: absolute; left: 10px; top: -10px; white-space: nowrap; font-size: 11px; font-weight: 600;
+  padding: 2px 7px; border-radius: 6px; background: rgba(7,11,15,.78); border: 1px solid rgba(255,255,255,.1);
+}
+.camp span b { font-family: var(--f-mono); font-weight: 400; color: var(--muted); font-size: 10px; margin-left: 5px; }
+@keyframes campIn { from { opacity: 0; transform: translateY(6px); } }

@@ -320,8 +320,69 @@
     map.addSource("route", { type: "geojson", data: lineFC(fullRoute()), lineMetrics: true });
     map.addLayer({ id: "route-glow", type: "line", source: "route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#f5c542", "line-width": 10, "line-blur": 8, "line-opacity": 0.45 } });
     map.addLayer({ id: "route", type: "line", source: "route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-width": 2.6, "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "#ff6a3d", 1, "#f5c542"] } });
+    addClimb();
   }
   const setRoute = (coords) => map.getSource("route")?.setData(lineFC(coords));
+
+  /* ---------- Aufstiegsrouten pro Berg ---------- */
+  const ROUTES = window.ROUTES || {};
+  let campMarkers = [], climbSel = null;
+  function addClimb() {
+    map.addSource("climb", { type: "geojson", data: lineFC([]), lineMetrics: true });
+    map.addLayer({ id: "climb-glow", type: "line", source: "climb", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 9, "line-blur": 6, "line-opacity": 0.35 } });
+    map.addLayer({ id: "climb", type: "line", source: "climb", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-width": 3.4, "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "#5fd4e8", 0.6, "#ffffff", 1, "#ff6a3d"] } });
+  }
+  function clearClimb() {
+    map.getSource("climb")?.setData(lineFC([]));
+    campMarkers.forEach((c) => c.remove()); campMarkers = [];
+    climbSel = null;
+  }
+  function campsFor(r, upto = Infinity) {
+    campMarkers.forEach((c) => c.remove()); campMarkers = [];
+    r.camps.forEach((c, i) => {
+      if (i >= upto) return;
+      const e = el("div", "camp" + (i === 0 ? " start" : ""), `<i></i><span>${esc(c.n)}${c.alt ? `<b>${fmt(c.alt)} m</b>` : ""}</span>`);
+      campMarkers.push(new maplibregl.Marker({ element: e, anchor: "center" }).setLngLat([c.lon, c.lat]).addTo(map));
+    });
+  }
+  function showClimb(m, idx, fly) {
+    const r = (ROUTES[m.id] || [])[idx]; if (!r) return;
+    climbSel = { id: m.id, idx };
+    document.querySelectorAll("#routes .rt").forEach((b) => b.classList.toggle("on", +b.dataset.i === idx));
+    const coords = r.coords.map((c) => [c[0], c[1]]);
+    if (!fly || reduceMotion) { map.getSource("climb")?.setData(lineFC(coords)); campsFor(r); return; }
+    climbFly(m, r, coords);
+  }
+  /* Kamera folgt der Route vom Start bis zum Gipfel, die Linie wächst mit */
+  async function climbFly(m, r, coords) {
+    stopOrbit(); if (anim) anim.cancel = true;
+    map.getSource("climb")?.setData(lineFC([]));
+    campsFor(r, 1);
+    const pad = isMobile() ? { top: 40, bottom: innerHeight * 0.62, left: 0, right: 0 } : { top: 60, bottom: 40, left: 360, right: 480 };
+    const b0 = bearingOf(coords[0], [m.lon, m.lat]);
+    await flyTo({ center: coords[0], zoom: 13.4, pitch: 64, bearing: b0, padding: pad, duration: 2200 });
+    if (climbSel?.id !== m.id) return;
+    const n = coords.length, dur = clamp(5000 + r.km * 900, 7000, 16000);
+    let shown = 1;
+    const ok = await animate(dur, (t) => {
+      const k = easeInOut(t), idx = Math.max(1, Math.round(k * (n - 1)));
+      map.getSource("climb")?.setData(lineFC(coords.slice(0, idx + 1)));
+      const look = coords[Math.min(n - 1, idx + Math.round(n * 0.08))];
+      const camp = r.camps.findIndex((c, i) => i >= shown && dist({ lat: c.lat, lon: c.lon }, { lat: coords[idx][1], lon: coords[idx][0] }) < 0.12);
+      if (camp > 0) { shown = camp + 1; campsFor(r, shown); }
+      map.jumpTo({ center: coords[idx], zoom: 13.6 - Math.sin(Math.PI * t) * 0.6, pitch: 66, bearing: lerp(b0, bearingOf(coords[idx], look) || b0, 0.15) });
+    });
+    map.getSource("climb")?.setData(lineFC(coords));
+    campsFor(r);
+    if (ok && selected === m.id) {
+      toast(`${m.name} erreicht · ${fmt(m.alt)} m`);
+      /* zum Schluss die ganze Route mit allen Lagern zeigen */
+      const bb = coords.reduce((b, c) => [Math.min(b[0], c[0]), Math.min(b[1], c[1]), Math.max(b[2], c[0]), Math.max(b[3], c[1])], [180, 90, -180, -90]);
+      const cam = map.cameraForBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: { top: pad.top + 60, bottom: pad.bottom + 60, left: pad.left + 60, right: pad.right + 60 } });
+      if (cam) await easeTo({ center: cam.center, zoom: Math.min(14, cam.zoom - 0.4), pitch: 58, bearing: map.getBearing(), padding: pad, duration: 2600 });
+      if (selected === m.id) orbit(3);
+    }
+  }
 
   /* ---------- Kamera-Helfer ---------- */
   let anim = null, orbitRAF = null, touring = false;
@@ -527,7 +588,7 @@
     hint(false); hintUsed = true;
     if (selected && markers[selected]) markers[selected].el.classList.remove("sel");
     selected = id;
-    markers[id].el.classList.add("sel");
+    markers[id]?.el.classList.add("sel");
     document.querySelectorAll(".row").forEach((r) => r.classList.toggle("sel", r.dataset.id === id));
     if (isMobile()) $("#list").classList.remove("tall");
     renderDetail(m);
@@ -584,6 +645,7 @@
           <div class="stat wide"><small>Normalroute</small><b>${esc(m.route)}</b></div>
           ${m.erst ? `<div class="stat wide"><small>Erstbesteigung</small><b>${esc(m.erst)}</b></div>` : ""}
         </div>
+        ${(ROUTES[m.id] || []).length ? `<div><p class="h-label">Routen · ${ROUTES[m.id].length} · antippen zum Abfliegen</p><div class="routes" id="routes">${ROUTES[m.id].map((r, i) => `<button class="rt" data-i="${i}"><span class="rt-n">${esc(r.name)}</span><span class="rt-m">${r.km.toFixed(1)} km · ${fmt(r.up)} hm${r.camps.length > 2 ? ` · ${r.camps.length} Stationen` : ""}</span>${r.schematic ? `<span class="rt-tag">schematisch</span>` : `<span class="rt-tag real">echter Weg</span>`}<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg></button>`).join("")}</div></div>` : ""}
         <div class="actions">
           <button class="btn summit ${done ? "is-done" : ""}" id="doneBtn">${done ? "✓ Bestiegen" : "Als bestiegen markieren"}</button>
           ${done ? `<label class="date-row" style="grid-column:span 2">Datum <input type="date" id="doneDate" value="${esc(state.done[m.id] || "")}"></label>` : ""}
@@ -599,6 +661,10 @@
     $("#doneBtn").addEventListener("click", () => toggleDone(m));
     $("#doneDate")?.addEventListener("change", (e) => { state.done[m.id] = e.target.value; save(); setRoute(fullRoute()); });
     $("#flyBtn").addEventListener("click", () => flyAround(m));
+    document.querySelectorAll("#routes .rt").forEach((b) => b.addEventListener("click", () => showClimb(m, +b.dataset.i, true)));
+    if (ROUTES[m.id] && climbSel?.id !== m.id) showClimb(m, 0, false);
+    else if (climbSel?.id === m.id) document.querySelectorAll("#routes .rt").forEach((b) => b.classList.toggle("on", +b.dataset.i === climbSel.idx));
+    if (!ROUTES[m.id]) clearClimb();
     $("#photosBtn").addEventListener("click", () => openLightbox(gallery.i));
     $("#heroOpen").addEventListener("click", () => imgs.length && openLightbox(gallery.i));
     $("#hPrev")?.addEventListener("click", () => showHero(gallery.i - 1));
@@ -663,6 +729,7 @@
     if (selected && markers[selected]) markers[selected].el.classList.remove("sel");
     document.querySelectorAll(".row.sel").forEach((r) => r.classList.remove("sel"));
     selected = null;
+    clearClimb();
     applyPadding();
     if (!silent) stopOrbit();
   }
