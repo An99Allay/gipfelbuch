@@ -489,3 +489,25 @@ body.touring .list { transform: translateX(-30px); }
   .mk-dot { box-shadow: none; }
   .row { animation: none; }
 }
+
+/* ---------- Stationen (Lager, Hütten, Gipfel) ---------- */
+.stations { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 8px; scroll-snap-type: x proximity; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.15) transparent; }
+.st {
+  flex: 0 0 128px; scroll-snap-align: center; display: grid; grid-template-rows: auto auto auto; text-align: left; gap: 2px;
+  padding: 0 0 8px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.04); overflow: hidden; position: relative;
+  animation: stIn .5s var(--ease) both; animation-delay: var(--d);
+  transition: border-color .25s, transform .25s var(--ease), background .25s;
+}
+@keyframes stIn { from { opacity: 0; transform: translateY(10px) scale(.96); } }
+.st:hover { transform: translateY(-2px); background: rgba(255,255,255,.08); }
+.st.on { border-color: rgba(95,212,232,.7); box-shadow: 0 0 0 1px rgba(95,212,232,.35), 0 6px 18px rgba(0,0,0,.35); }
+.st.top.on { border-color: rgba(245,197,66,.8); box-shadow: 0 0 0 1px rgba(245,197,66,.4), 0 6px 18px rgba(0,0,0,.35); }
+.st-ph { display: grid; place-items: center; aspect-ratio: 4 / 3; background: #10171d; color: var(--faint); overflow: hidden; }
+.st-ph svg { width: 34px; height: 34px; }
+.st-ph img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s, transform .6s var(--ease); }
+.st-ph img.on { opacity: 1; }
+.st:hover .st-ph img, .st.on .st-ph img { transform: scale(1.06); }
+.st-i { position: absolute; top: 6px; left: 6px; font-family: var(--f-mono); font-size: 10px; padding: 1px 6px; border-radius: 5px; background: rgba(7,11,15,.75); color: #fff; }
+.st.top .st-i { background: var(--summit); color: #0b0f13; }
+.st b { padding: 0 9px; font-size: 12.5px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.st small { padding: 0 9px; font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); }

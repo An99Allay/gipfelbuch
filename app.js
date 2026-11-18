@@ -387,7 +387,7 @@
   function campsFor(r, upto = Infinity) {
     campMarkers.forEach((c) => c.remove()); campMarkers = [];
     r.camps.forEach((c, i) => {
-      if (i >= upto) return;
+      if (i >= upto || c.top) return;
       const e = el("div", "camp" + (i === 0 ? " start" : ""), `<i></i><span>${esc(c.n)}${c.alt ? `<b>${fmt(c.alt)} m</b>` : ""}</span>`);
       campMarkers.push(new maplibregl.Marker({ element: e, anchor: "center" }).setLngLat([c.lon, c.lat]).addTo(map));
     });
@@ -396,15 +396,52 @@
     const r = (ROUTES[m.id] || [])[idx]; if (!r) return;
     climbSel = { id: m.id, idx };
     document.querySelectorAll("#routes .rt").forEach((b) => b.classList.toggle("on", +b.dataset.i === idx));
+    renderStations(m, r);
     const coords = r.coords.map((c) => [c[0], c[1]]);
     if (!fly || reduceMotion) { map.getSource("climb")?.setData(lineFC(coords)); campsFor(r); return; }
     climbFly(m, r, coords);
   }
+  /* Stationen-Leiste: Foto, Name, Höhe je Lager/Hütte; antippen = hinfliegen + Foto gross */
+  function renderStations(m, r) {
+    const box = $("#stations"); if (!box) return;
+    box.innerHTML = r.camps.map((c, i) => `<button class="st${c.top ? " top" : ""}" data-i="${i}" style="--d:${i * 60}ms">
+      <span class="st-ph">${c.ph ? `<img alt="" loading="lazy" src="${esc(imgUrl(c.ph, 330))}">` : `<svg viewBox="0 0 24 24"><path d="M3 19 10 7l4 6 2-3 5 9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`}</span>
+      <span class="st-i">${c.top ? "▲" : i === 0 ? "Start" : i}</span>
+      <b>${esc(c.n)}</b><small>${c.alt ? fmt(c.alt) + " m" : "&nbsp;"}</small></button>`).join("");
+    box.querySelectorAll(".st img").forEach((img) => (img.onload = () => img.classList.add("on")));
+    box.querySelectorAll(".st").forEach((b) => b.addEventListener("click", () => {
+      const c = r.camps[+b.dataset.i];
+      stopOrbit(); if (anim) anim.cancel = true;
+      stationOn(+b.dataset.i, true);
+      map.flyTo({ center: [c.lon, c.lat], zoom: c.top ? 13.2 : 14.2, pitch: 62, bearing: map.getBearing() + 25, duration: 2200, essential: true });
+    }));
+  }
+  function stationOn(i, showPhoto) {
+    const box = $("#stations"); if (!box) return;
+    box.querySelectorAll(".st").forEach((b) => b.classList.toggle("on", +b.dataset.i === i));
+    const b = box.querySelector(`.st[data-i="${i}"]`);
+    if (b) box.scrollTo({ left: b.offsetLeft - box.clientWidth / 2 + b.clientWidth / 2, behavior: "smooth" });
+    const r = climbSel && (ROUTES[climbSel.id] || [])[climbSel.idx], c = r?.camps[i];
+    if (showPhoto && c?.ph) heroPhoto(c.ph, c.n + (c.alt ? ` · ${fmt(c.alt)} m` : ""));
+  }
+  async function heroPhoto(im, label) {
+    const hero = $("#hero"); if (!hero) return;
+    const token = ++heroToken;
+    $("#heroBadges").innerHTML = `<span class="badge">${esc(label)}</span>${is4k(im) ? `<span class="badge k4">4K</span>` : ""}`;
+    $("#credit").innerHTML = `Foto: ${esc(im.by || "unbekannt")} · ${esc(im.lic || "")} · <a href="${esc(im.page)}" target="_blank" rel="noopener">Wikimedia Commons</a>`;
+    try {
+      const img = await loadImg(imgUrl(im, 960));
+      if (token !== heroToken) return;
+      put(hero, img);
+    } catch (e) {}
+  }
+
   /* Kamera folgt der Route vom Start bis zum Gipfel, die Linie wächst mit */
   async function climbFly(m, r, coords) {
     stopOrbit(); if (anim) anim.cancel = true;
     map.getSource("climb")?.setData(lineFC([]));
     campsFor(r, 1);
+    stationOn(0, true);
     const pad = isMobile() ? { top: 40, bottom: innerHeight * 0.62, left: 0, right: 0 } : { top: 60, bottom: 40, left: 360, right: 480 };
     const b0 = bearingOf(coords[0], [m.lon, m.lat]);
     await flyTo({ center: coords[0], zoom: 13.4, pitch: 64, bearing: b0, padding: pad, duration: 2200 });
@@ -416,13 +453,14 @@
       map.getSource("climb")?.setData(lineFC(coords.slice(0, idx + 1)));
       const look = coords[Math.min(n - 1, idx + Math.round(n * 0.08))];
       const camp = r.camps.findIndex((c, i) => i >= shown && dist({ lat: c.lat, lon: c.lon }, { lat: coords[idx][1], lon: coords[idx][0] }) < 0.12);
-      if (camp > 0) { shown = camp + 1; campsFor(r, shown); }
+      if (camp > 0) { shown = camp + 1; campsFor(r, shown); stationOn(camp, true); }
       map.jumpTo({ center: coords[idx], zoom: 13.6 - Math.sin(Math.PI * t) * 0.6, pitch: 66, bearing: lerp(b0, bearingOf(coords[idx], look) || b0, 0.15) });
     });
     map.getSource("climb")?.setData(lineFC(coords));
     campsFor(r);
     if (ok && selected === m.id) {
       toast(`${m.name} erreicht · ${fmt(m.alt)} m`);
+      stationOn(r.camps.length - 1, true);
       /* zum Schluss die ganze Route mit allen Lagern zeigen */
       const bb = coords.reduce((b, c) => [Math.min(b[0], c[0]), Math.min(b[1], c[1]), Math.max(b[2], c[0]), Math.max(b[3], c[1])], [180, 90, -180, -90]);
       const cam = map.cameraForBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: { top: pad.top + 60, bottom: pad.bottom + 60, left: pad.left + 60, right: pad.right + 60 } });
@@ -696,7 +734,7 @@
           <div class="stat wide"><small>Normalroute</small><b>${esc(m.route)}</b></div>
           ${m.erst ? `<div class="stat wide"><small>Erstbesteigung</small><b>${esc(m.erst)}</b></div>` : ""}
         </div>
-        ${(ROUTES[m.id] || []).length ? `<div><p class="h-label">Routen · ${ROUTES[m.id].length} · antippen zum Abfliegen</p><div class="routes" id="routes">${ROUTES[m.id].map((r, i) => `<button class="rt" data-i="${i}"><span class="rt-n">${esc(r.name)}</span><span class="rt-m">${r.km.toFixed(1)} km · ${fmt(r.up)} hm${r.camps.length > 2 ? ` · ${r.camps.length} Stationen` : ""}</span>${r.schematic ? `<span class="rt-tag">schematisch</span>` : `<span class="rt-tag real">echter Weg</span>`}<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg></button>`).join("")}</div></div>` : ""}
+        ${(ROUTES[m.id] || []).length ? `<div><p class="h-label">Routen · ${ROUTES[m.id].length} · antippen zum Abfliegen</p><div class="routes" id="routes">${ROUTES[m.id].map((r, i) => `<button class="rt" data-i="${i}"><span class="rt-n">${esc(r.name)}</span><span class="rt-m">${r.km.toFixed(1)} km · ${fmt(r.up)} hm${r.camps.length > 2 ? ` · ${r.camps.length} Stationen` : ""}</span>${r.schematic ? `<span class="rt-tag">schematisch</span>` : `<span class="rt-tag real">echter Weg</span>`}<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg></button>`).join("")}</div><p class="h-label" style="margin-top:14px">Stationen · antippen zum Hinfliegen</p><div class="stations" id="stations"></div></div>` : ""}
         <div class="actions">
           <button class="btn summit ${done ? "is-done" : ""}" id="doneBtn">${done ? "✓ Bestiegen" : "Als bestiegen markieren"}</button>
           ${done ? `<label class="date-row" style="grid-column:span 2">Datum <input type="date" id="doneDate" value="${esc(state.done[m.id] || "")}"></label>` : ""}
