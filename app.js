@@ -199,6 +199,9 @@
     maxPitch: 82,
     attributionControl: { compact: true },
     fadeDuration: 300,
+    /* Handys rendern sonst mit 3× Pixeldichte – 1.5× sieht gleich scharf aus und ist ~4× schneller */
+    pixelRatio: Math.min(devicePixelRatio || 1, matchMedia("(max-width: 820px)").matches ? 1.5 : 1.75),
+    maxTileCacheSize: 400,
   });
   window.__map = map;
   /* Karte folgt jeder Grössenänderung (Handy drehen, Adressleiste ein/aus) */
@@ -207,6 +210,15 @@
     new ResizeObserver(() => { cancelAnimationFrame(rz); rz = requestAnimationFrame(() => map.resize()); }).observe(document.getElementById("map"));
   } catch (e) {}
   addEventListener("orientationchange", () => setTimeout(() => map.resize(), 250));
+
+  /* 3D-Gelände nur, wenn man nah genug dran ist – auf dem ganzen Globus sieht man es ohnehin nicht */
+  let terrainOn = true;
+  function syncTerrain() {
+    const z = map.getZoom();
+    const want = terrainOn ? z > 4.2 : z > 5.2;
+    if (want !== terrainOn) { terrainOn = want; map.setTerrain(want ? { source: "dem", exaggeration: 1.35 } : null); }
+  }
+  map.on("zoom", syncTerrain);
 
   /* Ladebalken */
   const loadbar = $("#loadbar");
