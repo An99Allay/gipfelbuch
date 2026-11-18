@@ -397,6 +397,7 @@
     climbSel = { id: m.id, idx };
     document.querySelectorAll("#routes .rt").forEach((b) => b.classList.toggle("on", +b.dataset.i === idx));
     renderStations(m, r);
+    renderProfile(r);
     const coords = r.coords.map((c) => [c[0], c[1]]);
     if (!fly || reduceMotion) { map.getSource("climb")?.setData(lineFC(coords)); campsFor(r); return; }
     climbFly(m, r, coords);
@@ -415,6 +416,33 @@
       stationOn(+b.dataset.i, true);
       map.flyTo({ center: [c.lon, c.lat], zoom: c.top ? 13.2 : 14.2, pitch: 62, bearing: map.getBearing() + 25, duration: 2200, essential: true });
     }));
+  }
+  /* Höhenprofil der Route: Fläche + Linie zeichnen sich ein, Stationen als Punkte, Läufer-Punkt beim Abfliegen */
+  let profDot = null;
+  function renderProfile(r) {
+    const box = $("#prof"); if (!box || !r.prof) return;
+    const W = 400, H = 110, P = 6, z = r.prof, n = z.length;
+    const lo = Math.min(...z), hi = Math.max(...z), span = Math.max(1, hi - lo);
+    const X = (i) => P + (i / (n - 1)) * (W - 2 * P), Y = (v) => H - 18 - ((v - lo) / span) * (H - 34);
+    const line = z.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+    const coords = r.coords, nc = coords.length;
+    const camps = r.camps.map((c) => {
+      let best = 0, bd = Infinity;
+      for (let k = 0; k < nc; k += 2) { const d = (coords[k][0] - c.lon) ** 2 + (coords[k][1] - c.lat) ** 2; if (d < bd) { bd = d; best = k; } }
+      const f = c.top ? 1 : best / (nc - 1), i = f * (n - 1), v = z[Math.round(i)];
+      return `<circle class="${c.top ? "pf-top" : "pf-c"}" cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${c.top ? 4.5 : 3.2}"><title>${esc(c.n)}</title></circle>`;
+    }).join("");
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Höhenprofil">
+      <defs><linearGradient id="pfg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5fd4e8" stop-opacity=".45"/><stop offset="1" stop-color="#5fd4e8" stop-opacity="0"/></linearGradient></defs>
+      <path class="pf-area" d="${line}L${X(n - 1)} ${H - 18}L${X(0)} ${H - 18}Z" fill="url(#pfg)"/>
+      <path class="pf-line" d="${line}" pathLength="1"/>${camps}<circle class="pf-dot" id="pfDot" r="5" cx="${X(0)}" cy="${Y(z[0])}"/></svg>
+      <div class="pf-lab"><span>${fmt(lo)} m</span><span>${r.km.toFixed(1)} km · ${fmt(r.up)} hm</span><span>${fmt(hi)} m</span></div>`;
+    profDot = { el: $("#pfDot"), X, Y, z, n };
+  }
+  function profAt(t) {
+    if (!profDot || !profDot.el.isConnected) return;
+    const i = t * (profDot.n - 1), a = Math.floor(i), b = Math.min(profDot.n - 1, a + 1), v = profDot.z[a] + (profDot.z[b] - profDot.z[a]) * (i - a);
+    profDot.el.setAttribute("cx", profDot.X(i).toFixed(1)); profDot.el.setAttribute("cy", profDot.Y(v).toFixed(1));
   }
   function stationOn(i, showPhoto) {
     const box = $("#stations"); if (!box) return;
@@ -450,6 +478,7 @@
     let shown = 1;
     const ok = await animate(dur, (t) => {
       const k = easeInOut(t), idx = Math.max(1, Math.round(k * (n - 1)));
+      profAt(k);
       map.getSource("climb")?.setData(lineFC(coords.slice(0, idx + 1)));
       const look = coords[Math.min(n - 1, idx + Math.round(n * 0.08))];
       const camp = r.camps.findIndex((c, i) => i >= shown && dist({ lat: c.lat, lon: c.lon }, { lat: coords[idx][1], lon: coords[idx][0] }) < 0.12);
@@ -734,7 +763,7 @@
           <div class="stat wide"><small>Normalroute</small><b>${esc(m.route)}</b></div>
           ${m.erst ? `<div class="stat wide"><small>Erstbesteigung</small><b>${esc(m.erst)}</b></div>` : ""}
         </div>
-        ${(ROUTES[m.id] || []).length ? `<div><p class="h-label">Routen · ${ROUTES[m.id].length} · antippen zum Abfliegen</p><div class="routes" id="routes">${ROUTES[m.id].map((r, i) => `<button class="rt" data-i="${i}"><span class="rt-n">${esc(r.name)}</span><span class="rt-m">${r.km.toFixed(1)} km · ${fmt(r.up)} hm${r.camps.length > 2 ? ` · ${r.camps.length} Stationen` : ""}</span>${r.schematic ? `<span class="rt-tag">schematisch</span>` : `<span class="rt-tag real">echter Weg</span>`}<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg></button>`).join("")}</div><p class="h-label" style="margin-top:14px">Stationen · antippen zum Hinfliegen</p><div class="stations" id="stations"></div></div>` : ""}
+        ${(ROUTES[m.id] || []).length ? `<div><p class="h-label">Routen · ${ROUTES[m.id].length} · antippen zum Abfliegen</p><div class="routes" id="routes">${ROUTES[m.id].map((r, i) => `<button class="rt" data-i="${i}"><span class="rt-n">${esc(r.name)}</span><span class="rt-m">${r.km.toFixed(1)} km · ${fmt(r.up)} hm${r.camps.length > 2 ? ` · ${r.camps.length} Stationen` : ""}</span>${r.schematic ? `<span class="rt-tag">schematisch</span>` : `<span class="rt-tag real">echter Weg</span>`}<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg></button>`).join("")}</div><div class="prof" id="prof"></div><p class="h-label" style="margin-top:14px">Stationen · antippen zum Hinfliegen</p><div class="stations" id="stations"></div></div>` : ""}
         <div class="actions">
           <button class="btn summit ${done ? "is-done" : ""}" id="doneBtn">${done ? "✓ Bestiegen" : "Als bestiegen markieren"}</button>
           ${done ? `<label class="date-row" style="grid-column:span 2">Datum <input type="date" id="doneDate" value="${esc(state.done[m.id] || "")}"></label>` : ""}
