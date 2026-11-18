@@ -163,6 +163,7 @@
     container: "map",
     style: {
       version: 8,
+      glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
       projection: { type: "globe" },
       sources: {
         sat: {
@@ -242,45 +243,74 @@
   map.on("dataloading", () => { clearTimeout(lbTimer); loadbar.classList.add("on"); });
   map.on("idle", () => { lbTimer = setTimeout(() => loadbar.classList.remove("on"), 200); });
 
-  /* Marker */
-  const markers = {};
+  /* Gipfelpunkte als GPU-Ebene (statt 128 HTML-Elementen, die bei jeder Bewegung neu platziert werden mussten) */
+  const HEX = { "--d-wander": "#f5c542", "--d-berg": "#ef4b3f", "--d-alpin": "#3b82f6", "--d-hoch": "#5fd4e8", "--d-schwer": "#a78bfa", "--d-sehr": "#f05fb0", "--d-extrem": "#ffffff" };
+  const IDX = {};
+  MOUNTAINS.forEach((m, i) => (IDX[m.id] = i));
+  const revealed = new Set();
+  let hotIds = [];
+  const peakState = (id, st) => { if (IDX[id] != null && map.getSource("peaks")) map.setFeatureState({ source: "peaks", id: IDX[id] }, st); };
   function buildMarkers() {
-    MOUNTAINS.forEach((m) => {
-      const e = el("div", "mk pending");
-      e.style.setProperty("--c", color(m.lvl));
-      e.innerHTML = `<div class="mk-dot"></div><div class="mk-label">${esc(m.name)}<i>${fmt(m.alt)} m</i></div>`;
-      e.addEventListener("click", (ev) => { ev.stopPropagation(); select(m.id); });
-      e.addEventListener("mouseenter", () => hl(m.id, true));
-      e.addEventListener("mouseleave", () => hl(m.id, false));
-      markers[m.id] = { el: e, mk: new maplibregl.Marker({ element: e, anchor: "center" }).setLngLat([m.lon, m.lat]).addTo(map) };
+    map.addSource("peaks", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: MOUNTAINS.map((m, i) => ({
+        type: "Feature", id: i, geometry: { type: "Point", coordinates: [m.lon, m.lat] },
+        properties: { id: m.id, name: m.name, alt: fmt(m.alt) + " m", c: HEX[color(m.lvl).replace(/^var\(|\)$/g, "")] || "#ffffff", km: m.km } })) },
     });
+    const S = (k) => ["boolean", ["feature-state", k], false];
+    const on = ["case", S("on"), 1, 0];
+    map.addLayer({ id: "peaks-ring", type: "circle", source: "peaks", paint: {
+      "circle-radius": ["case", S("sel"), 17, 12], "circle-color": "rgba(0,0,0,0)", "circle-pitch-alignment": "viewport", "circle-pitch-scale": "viewport",
+      "circle-stroke-width": 2, "circle-stroke-color": ["get", "c"],
+      "circle-stroke-opacity": ["case", ["all", S("on"), S("sel")], 0.45, 0] } });
+    map.addLayer({ id: "peaks", type: "circle", source: "peaks", paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 1.5, ["case", S("sel"), 8, S("hl"), 7, 5], 6, ["case", S("sel"), 9.5, S("hl"), 8.5, 6.5], 10, ["case", S("sel"), 10.5, S("hl"), 9.5, 7.5]],
+      "circle-color": ["case", S("done"), "#f5c542", "rgba(7,11,15,0.82)"],
+      "circle-stroke-color": ["case", S("done"), "#ffffff", ["get", "c"]],
+      "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 1.5, 2, 8, 2.6],
+      "circle-pitch-alignment": "viewport", "circle-pitch-scale": "viewport",
+      "circle-opacity": on, "circle-stroke-opacity": on } });
+    const label = (id, extra) => ({ id, type: "symbol", source: "peaks", ...extra,
+      layout: { "text-field": ["format", ["get", "name"], {}, "  ", {}, ["get", "alt"], { "font-scale": 0.82, "text-color": "#9fb0ba" }],
+        "text-font": ["Open Sans Semibold"], "text-size": 12.5, "text-anchor": "left", "text-offset": [0.95, 0],
+        "text-max-width": 30, "text-pitch-alignment": "viewport", "text-rotation-alignment": "viewport", ...(extra.layout || {}) },
+      paint: { "text-color": "#eef3f5", "text-halo-color": "rgba(7,11,15,0.92)", "text-halo-width": 1.8, "text-opacity": on } });
+    map.addLayer(label("peaks-label", { minzoom: 6.8, layout: { "symbol-sort-key": ["get", "km"] } }));
+    map.addLayer(label("peaks-label-hot", { filter: ["in", ["get", "id"], ["literal", []]], layout: { "text-allow-overlap": true, "text-ignore-placement": true } }));
     const h = el("div", "home", `<div class="home-pulse"></div><div class="home-core"></div><div class="home-label">Kriens</div>`);
     new maplibregl.Marker({ element: h, anchor: "center" }).setLngLat([KRIENS.lon, KRIENS.lat]).addTo(map);
     refreshMarkers();
   }
-  function refreshMarkers() {
-    MOUNTAINS.forEach((m) => markers[m.id]?.el.classList.toggle("done", isDone(m.id)));
+  function refreshMarkers() { MOUNTAINS.forEach((m) => peakState(m.id, { done: isDone(m.id) })); }
+  function revealPeak(id) { if (revealed.has(id)) return; revealed.add(id); peakState(id, { on: true }); }
+  function updateHot() { map.getLayer("peaks-label-hot") && map.setFilter("peaks-label-hot", ["in", ["get", "id"], ["literal", hotIds]]); }
+  function setSel(id, on) {
+    if (!id) return;
+    peakState(id, { sel: on });
+    hotIds = hotIds.filter((x) => x !== id); if (on) hotIds.push(id); updateHot();
   }
   function hl(id, on) {
-    markers[id]?.el.classList.toggle("hl", on);
+    peakState(id, { hl: on });
+    if (on) { if (!hotIds.includes(id)) hotIds.push(id); } else if (id !== selected) hotIds = hotIds.filter((x) => x !== id);
+    updateHot();
     document.querySelector(`.row[data-id="${id}"]`)?.classList.toggle("hl", on);
   }
-  map.on("zoom", () => $("#map").classList.toggle("labels", map.getZoom() >= 6.8));
-
-  /* Marker hinter dem Horizont ausblenden (Globus + starke Neigung) */
-  function cullMarkers() {
-    const c = map.getCenter(), z = map.getZoom(), p = map.getPitch();
-    const span = (40075 / Math.pow(2, z)) * (innerWidth / 512);
-    const limit = z < 4 ? Infinity : span * (0.9 + Math.pow(p / 60, 2) * 1.6);
-    const cc = { lat: c.lat, lon: c.lng };
-    MOUNTAINS.forEach((m) => {
-      const mk = markers[m.id]; if (!mk) return;
-      const hide = dist(cc, m) > limit;
-      /* ferne Marker ganz von der Karte nehmen: sonst rechnet MapLibre für jeden in jedem Bild Position + Geländehöhe */
-      if (mk.hidden !== hide) { mk.hidden = hide; if (hide) mk.mk.remove(); else mk.mk.addTo(map); }
-    });
+  /* Treffer mit etwas Toleranz (Finger) */
+  function peakAt(pt, tol = 14) {
+    if (!map.getLayer("peaks")) return null;
+    const f = map.queryRenderedFeatures([[pt.x - tol, pt.y - tol], [pt.x + tol, pt.y + tol]], { layers: ["peaks"] });
+    if (!f.length) return null;
+    f.sort((a, b) => { const pa = map.project(a.geometry.coordinates), pb = map.project(b.geometry.coordinates); return Math.hypot(pa.x - pt.x, pa.y - pt.y) - Math.hypot(pb.x - pt.x, pb.y - pt.y); });
+    return f[0].properties.id;
   }
-  map.on("move", cullMarkers);
+  let hoverId = null;
+  map.on("mousemove", (e) => {
+    const id = peakAt(e.point, 8);
+    if (id === hoverId) return;
+    if (hoverId) hl(hoverId, false);
+    hoverId = id; if (id) hl(id, true);
+    map.getCanvas().style.cursor = id ? "pointer" : "";
+  });
 
   /* Distanzringe um Kriens */
   function ringsGeo() {
@@ -442,7 +472,7 @@
   async function intro() {
     const ordered = [...MOUNTAINS].sort((a, b) => a.km - b.km);
     const reveal = (km) => ordered.forEach((m) => {
-      if (m.km <= km) { const e = markers[m.id].el; if (e.classList.contains("pending")) { e.classList.remove("pending"); e.classList.add("pop"); } }
+      if (m.km <= km) revealPeak(m.id);
     });
     if (reduceMotion) { reveal(Infinity); map.jumpTo({ center: [20, 22], zoom: 1.6, pitch: 0, bearing: 0 }); return; }
     introRunning = true;
@@ -523,12 +553,12 @@
       drawn = base.concat(path);
       if (!ok) break;
       setRoute(drawn);
-      markers[to.id].el.classList.add("sel");
+      setSel(to.id, true);
       showArrival(to, i + 1, stops.length, total);
       if (!reduceMotion) orbit(6, 2600);
       await sleep(2600);
       stopOrbit();
-      markers[to.id].el.classList.remove("sel");
+      setSel(to.id, false);
     }
     hideArrival();
     setRoute(fullRoute());
@@ -607,9 +637,9 @@
     if (touring) return;
     if (anim) anim.cancel = true;
     hint(false); hintUsed = true;
-    if (selected && markers[selected]) markers[selected].el.classList.remove("sel");
+    if (selected) setSel(selected, false);
     selected = id;
-    markers[id]?.el.classList.add("sel");
+    setSel(id, true);
     document.querySelectorAll(".row").forEach((r) => r.classList.toggle("sel", r.dataset.id === id));
     if (isMobile()) $("#list").classList.remove("tall");
     renderDetail(m);
@@ -747,7 +777,7 @@
     box.classList.add("out");
     document.body.classList.remove("has-detail");
     setTimeout(() => { box.hidden = true; box.classList.remove("out"); }, 340);
-    if (selected && markers[selected]) markers[selected].el.classList.remove("sel");
+    if (selected) setSel(selected, false);
     document.querySelectorAll(".row.sel").forEach((r) => r.classList.remove("sel"));
     selected = null;
     clearClimb();
@@ -851,8 +881,10 @@
     map.easeTo({ pitch: flat ? 65 : 0, duration: 1200 });
   });
   map.on("pitchend", () => ($("#tiltLabel").textContent = map.getPitch() < 20 ? "3D" : "2D"));
-  map.on("click", () => {
+  map.on("click", (e) => {
     if (touring) return;
+    const hit = !introRunning && peakAt(e.point);
+    if (hit) { select(hit); return; }
     if (introRunning || (hintShown && !hintUsed)) { tour(); return; }
     if (!$("#detail").hidden && !isMobile()) return;
     if (!$("#detail").hidden) closeDetail();
