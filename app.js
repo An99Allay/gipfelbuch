@@ -388,7 +388,8 @@
     campMarkers.forEach((c) => c.remove()); campMarkers = [];
     r.camps.forEach((c, i) => {
       if (i >= upto || c.top) return;
-      const e = el("div", "camp" + (i === 0 ? " start" : ""), `<i></i><span>${esc(c.n)}${c.alt ? `<b>${fmt(c.alt)} m</b>` : ""}</span>`);
+      const e = el("div", "camp" + (i === 0 ? " start" : "") + (c.ph ? " has-ph" : ""), `<i></i><span>${esc(c.n)}${c.alt ? `<b>${fmt(c.alt)} m</b>` : ""}${c.ph ? `<em>📷</em>` : ""}</span>`);
+      e.addEventListener("click", (ev) => { ev.stopPropagation(); stationOn(i, true); if (isMobile()) $("#detailScroll").scrollTo({ top: 0, behavior: "smooth" }); });
       campMarkers.push(new maplibregl.Marker({ element: e, anchor: "center" }).setLngLat([c.lon, c.lat]).addTo(map));
     });
   }
