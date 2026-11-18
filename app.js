@@ -157,6 +157,7 @@
   /* ---------- Karte ---------- */
   if (!window.maplibregl) { $("#veilSub").textContent = "Karte konnte nicht geladen werden. Internetverbindung prüfen."; return; }
 
+  const MOBILE = matchMedia("(max-width: 820px)").matches;
   try { maplibregl.setWorkerCount(2); } catch (e) {}
   const map = new maplibregl.Map({
     container: "map",
@@ -174,14 +175,14 @@
           tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"],
         },
         dem: {
-          type: "raster-dem", tileSize: 256, maxzoom: 15, encoding: "terrarium",
+          type: "raster-dem", tileSize: 256, maxzoom: MOBILE ? 12 : 13, encoding: "terrarium",
           tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
           attribution: "Gelände: Mapzen / AWS Terrain Tiles",
         },
       },
       layers: [
         { id: "bg", type: "background", paint: { "background-color": "#05080b" } },
-        { id: "sat", type: "raster", source: "sat", paint: { "raster-contrast": 0.06, "raster-saturation": 0.05, "raster-fade-duration": 380 } },
+        { id: "sat", type: "raster", source: "sat", paint: { "raster-contrast": 0.06, "raster-saturation": 0.05, "raster-fade-duration": MOBILE ? 0 : 300 } },
         { id: "places", type: "raster", source: "places", minzoom: 2.5, maxzoom: 9, paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], 2.5, 0.5, 6, 0.8, 8, 0.6, 9, 0] } },
       ],
       sky: {
@@ -198,7 +199,7 @@
     ...START_VIEW,
     maxPitch: 82,
     attributionControl: { compact: true },
-    fadeDuration: 300,
+    fadeDuration: MOBILE ? 0 : 300,
     /* Handys rendern sonst mit 3× Pixeldichte – 1.5× sieht gleich scharf aus und ist ~4× schneller */
     pixelRatio: Math.min(devicePixelRatio || 1, matchMedia("(max-width: 820px)").matches ? 1.5 : 1.75),
     maxTileCacheSize: 400,
@@ -387,13 +388,17 @@
   /* ---------- Kamera-Helfer ---------- */
   let anim = null, orbitRAF = null, touring = false;
   function stopOrbit() { if (orbitRAF) cancelAnimationFrame(orbitRAF); orbitRAF = null; }
-  function orbit(speed = 2.2) {
+  /* Kamera dreht sich langsam – aber nur kurz, sonst rendert die Karte pausenlos und das Handy ruckelt/heizt */
+  function orbit(speed = 2.2, maxMs = 8000) {
     stopOrbit();
     if (reduceMotion) return;
     let last = performance.now();
+    const end = last + maxMs;
     const step = (now) => {
       const dt = Math.min(64, now - last); last = now;
-      map.setBearing(map.getBearing() + (speed * dt) / 1000);
+      const fade = clamp((end - now) / 1500, 0, 1);          // sanft auslaufen
+      map.setBearing(map.getBearing() + (speed * fade * dt) / 1000);
+      if (now >= end) { orbitRAF = null; return; }
       orbitRAF = requestAnimationFrame(step);
     };
     orbitRAF = requestAnimationFrame(step);
@@ -504,7 +509,7 @@
       setRoute(drawn);
       markers[to.id].el.classList.add("sel");
       showArrival(to, i + 1, stops.length, total);
-      if (!reduceMotion) orbit(6);
+      if (!reduceMotion) orbit(6, 2600);
       await sleep(2600);
       stopOrbit();
       markers[to.id].el.classList.remove("sel");
@@ -749,7 +754,7 @@
   async function flyAround(m) {
     stopOrbit();
     await easeTo({ center: [m.lon, m.lat], zoom: (m.alt > 5000 ? 11.8 : 12.6) + 0.3, pitch: 76, duration: 1800 });
-    if (selected === m.id) orbit(9);
+    if (selected === m.id) orbit(9, 30000);
   }
 
   /* ---------- Lightbox ---------- */
