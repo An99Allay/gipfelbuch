@@ -645,7 +645,7 @@
         const r = el("button", "row" + (isDone(m.id) ? " done" : "") + (selected === m.id ? " sel" : ""));
         r.dataset.id = m.id;
         r.style.animationDelay = Math.min(n++ * 18, 600) + "ms";
-        r.innerHTML = `${plaque(m)}<span class="row-name"><b>${esc(m.name)}</b><small>${esc(m.type)} · ${esc(m.scale)}</small></span><span class="row-alt">${fmt(m.alt)} m<small>${m.km < 10 ? m.km.toFixed(1) : fmt(m.km)} km</small></span>`;
+        r.innerHTML = `${plaque(m)}<span class="row-name"><b>${esc(m.name)}</b><small>${esc(m.type)} · ${esc(m.scale)}${(window.ROUTES || {})[m.id] ? ` · <em class="row-rt">${window.ROUTES[m.id].length} ${window.ROUTES[m.id].length === 1 ? "Route" : "Routen"}</em>` : ""}</small></span><span class="row-alt">${fmt(m.alt)} m<small>${m.km < 10 ? m.km.toFixed(1) : fmt(m.km)} km</small></span>`;
         r.addEventListener("click", () => select(m.id));
         r.addEventListener("mouseenter", () => hl(m.id, true));
         r.addEventListener("mouseleave", () => hl(m.id, false));
@@ -832,7 +832,23 @@
     const done = isDone(m.id);
     renderDetail(m);
     const b = $("#doneBtn"); b.classList.add("burst");
-    if (done) toast(`Eingetragen: ${m.name}, ${fmt(m.alt)} m`);
+    if (done) { toast(`Eingetragen: ${m.name}, ${fmt(m.alt)} m`); burstAt($("#doneBtn")); }
+  }
+
+  /* kleine Gipfel-Feier: goldene Dreiecke fliegen aus dem Knopf */
+  function burstAt(node) {
+    if (!node || reduceMotion) return;
+    const r = node.getBoundingClientRect(), box = el("div", "burst-box");
+    box.style.left = r.left + r.width / 2 + "px"; box.style.top = r.top + r.height / 2 + "px";
+    for (let i = 0; i < 22; i++) {
+      const a = (i / 22) * Math.PI * 2 + Math.random() * 0.3, d = 60 + Math.random() * 90;
+      const p = el("i"); p.style.setProperty("--x", Math.cos(a) * d + "px"); p.style.setProperty("--y", Math.sin(a) * d - 30 + "px");
+      p.style.setProperty("--r", Math.round(Math.random() * 360) + "deg"); p.style.animationDelay = Math.random() * 80 + "ms";
+      if (i % 3 === 0) p.className = "w";
+      box.appendChild(p);
+    }
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 1300);
   }
 
   async function flyAround(m) {

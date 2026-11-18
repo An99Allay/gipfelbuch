@@ -511,3 +511,18 @@ body.touring .list { transform: translateX(-30px); }
 .st.top .st-i { background: var(--summit); color: #0b0f13; }
 .st b { padding: 0 9px; font-size: 12.5px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .st small { padding: 0 9px; font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); }
+
+/* Gipfel-Feier */
+.burst-box { position: fixed; z-index: 90; width: 0; height: 0; pointer-events: none; }
+.burst-box i {
+  position: absolute; left: -5px; top: -5px; width: 0; height: 0;
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 9px solid var(--summit);
+  animation: burstOut 1.1s cubic-bezier(.15,.7,.3,1) both;
+}
+.burst-box i.w { border-bottom-color: #fff; }
+@keyframes burstOut {
+  0% { transform: translate(0, 0) rotate(0) scale(.4); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate(var(--x), calc(var(--y) + 40px)) rotate(var(--r)) scale(1); opacity: 0; }
+}
+.row-rt { font-style: normal; color: #9be7c4; }
